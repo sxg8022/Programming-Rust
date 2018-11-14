@@ -1,4 +1,5 @@
 # Table of contents
 
-* [Initial page](README.md)
+* [Programming Rust](README.md)
+* [Untitled](untitled.md)
 
