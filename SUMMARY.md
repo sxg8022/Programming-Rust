@@ -1,4 +1,4 @@
 # Table of contents
 
-* [Programming-Rust](README.md)
+* [Initial page](README.md)
 
