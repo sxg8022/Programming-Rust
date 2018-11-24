@@ -1,4 +1,6 @@
 # Table of contents
 
-* [Initial page](README.md)
+* [封面](README.md)
+* [版权](ban-quan.md)
+* [目录](mu-lu.md)
 
