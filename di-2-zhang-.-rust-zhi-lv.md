@@ -558,9 +558,130 @@ match res {
 }
 ```
 
+ 这是一个条件语句，就像C中的if语句或switch语句：如果res是Ok\(v\)，那么它运行第一个分支，变量success设置为v。同样，如果res是Err\(e\)，它运行第二个分支，错误设置为e。成功和错误成员变量都是它们的分支的局部变量。 被执行的分支返回的值就是整个match表达式的值。
 
+这个match表达式的美妙之处是程序首先检查Result对象的成员变量，然后决定运行哪个分支；程序永远不会把一个错误的值当作成功的值返回。 在C和c++中，忘记检查错误代码或空指针是常见的错误，而在Rust中，这些错误是在编译时捕获的。 这个简单的匹配判断在可用性方面是一个重大的进步。
 
+ Rust允许你定义自己的类型，比如具有变量的Result，并使用匹配表达式来分析处理它们。RUST 管这些类型叫枚举；作为代数数据类型，您可能从其他语言中了解它们。 我们将在第10章中详细描述枚举。
 
+ 现在您可以读懂match表达式，post\_gcd的结构应该是清晰的：
+
+*  它调用request.get\_ref::&lt;UrlEncodedBody&gt;\(\)将request体数据解析为一个map键值对数组对象；如果该解析失败，它将向客户端返回错误信息。方法调用的::&lt;UrlEncodedBody&gt;部分是一个类型参数，它指示get\_ref应该获得request数据体的哪一部分数据。在本例中UrlEncodedBody类型指的是被解析为URL-encoded request字符串。
+*  在表单中，它查找名为“n”的参数的值，这是HTML表单将输入的数字放置到web页面中的文本组件对象。 该值不是单个字符串，而是字符串的vector，因为request参数名称可以是重名的。
+*  它遍历字符串vector，将每个字符串解析为一个无符号64位数字，如果任何字符串解析失败，则返回一个错误页面。
+*  最后，与前面一样计算数字的最大公约数，并构造一个描述结果的Response对象。 format!宏使用与writeln!和println!宏相同的字符串格式化模板，但返回格式化后的字符串值，而不是将文本直接写入流。
+
+ 最后一部分是我们前面编写的gcd函数。有了它，你可以中断现在正在运行的服务，然后重新构建和启动程序：
+
+```bash
+$ cargo run
+   Compiling iron-gcd v0.1.0 (file:///home/jimb/rust/iron-gcd)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.0 secs
+     Running `target/debug/iron-gcd`
+Serving on http://localhost:3000...
+```
+
+ 这一次，通过访问http://localhost:3000，输入一些数字，并单击  
+Compute GCD按钮，您应该实际看到一些结果\(图2-2\)。
+
+![&#x56FE;2 - 2&#xFF0C;&#x663E;&#x793A;Compute GCD&#x7ED3;&#x679C;&#x7684;&#x7F51;&#x9875;](.gitbook/assets/qq-tu-pian-20190111141822.png)
+
+### 并发
+
+ Rust的一大优点是支持并发编程。 确保RUST程序没有内存错误的规则也确保线程只能以避免数据竞争的方式共享内存的规则。例如：
+
+*  如果您使用互斥锁来协调对共享数据进行更改的线程， Rust确保您只能在持有锁时访问数据，并在持有锁之后自动释放锁。在C和C++中，互斥锁与其保护的数据之间的关系是无法在语言级别保证的，只能多写注释来说明。
+*  如果您希望在多个线程之间共享只读数据，那么Rust可以确保您不会意外地修改只读数据。在C和C++中，无法保证只读共享数据不会被意外修改。
+*  如果将数据结构的所有权从一个线程转移到另一个线程，Rust会确保您确实放弃了对它的所有访问。在C和C++中，您可以检查发送线程上的任何内容都不会再接触数据。 如果你做得不对，影响可能取决于CPU缓存中发生了什么，以及最近对内存进行了多少次写操作。
+
+ 在本节中，我们将向您介绍编写第二个多线程程序的过程。
+
+ 尽管您可能没有注意到，但您已经编写了第一个并发程序:用来实现最大公约数服务器的Iron web框架使用线程池来运行请求处理函数。如果服务器同时接收到请求，它可能同时在多个线程中运行get\_form和post\_gcd函数。这可能有点令人震惊，因为在编写这些函数时，我们肯定没有考虑并发性。但是Rust保证这样做是安全的，无论您的服务器变得多么复杂:如果您的程序能进行编译，那么它就没有数据竞争。所有RUST函数都是线程安全的。
+
+ 本节的程序绘制曼德尔布罗特集合，这是在复数上迭代一个简单函数生成的分形。绘制曼德布洛特集合常常被称为一种令人尴尬的并行算法，因为线程之间的通信模式非常简单；我们将在第19章中介绍更复杂的模式，但是这个任务演示了一些基本内容。
+
+ 首先，我们将创建一个新的RUST项目:
+
+```bash
+$ cargo new --bin mandelbrot
+     Created binary (application) `mandelbrot` project
+```
+
+ 所有代码都在mandelbrot/src/main.rs里，我们将向mandelbrot/Cargo.toml中添加一些依赖项。
+
+ 在进入并行mandelbrot实现之前，我们需要说明将要执行的计算。
+
+###  曼德布洛特集合实际上是什么
+
+ 在阅读代码时，有一个具体的想法是很有帮助的， 让我们来看看一些纯数学。 我们将从一个简单的案例开始，然后添加复杂的细节，直到我们到达计算的核心曼德尔勃特集合。
+
+ 这是一个无限循环，使用Rust的专用语法编写，循环语句：
+
+```rust
+fn square_loop(mut x: f64) {
+    loop {
+        x = x * x;
+    }
+}
+```
+
+ 在现实生活中，Rust可以看到x从未用于任何用途，因此可能不需要计算它的值。 但就目前而言，假设代码按照编写的方式运行。x的值会怎样？任何小于1的数的平方都会使它变小， 所以它趋于零;平方1得到1;对大于1的数平方会使它更大，所以它趋于无穷;将负数平方使其为正数，在此之后，它的行为与前面的情况类似\(图2-3\)。
+
+![&#x56FE;2 - 3&#xFF0C;&#x91CD;&#x590D;&#x5E73;&#x65B9;&#x4E00;&#x4E2A;&#x6570;&#x7684;&#x6548;&#x679C;](.gitbook/assets/qq-tu-pian-20190111185712.png)
+
+ 因此，取决于传递给square\_loop的值，x要么趋近于0，要么保持在  
+1，或者趋于无穷。
+
+ 现在考虑一个稍微不同的循环：
+
+```rust
+fn square_add_loop(c: f64) {
+    let mut x = 0.;
+    loop {
+        x = x * x + c;
+    }
+}
+```
+
+ 这一次，x从0开始，我们在每次迭代中调整它的值，在平方后加入c。 这使得我们很难看出x的值，但是一些实验表明，如果c大于0.25，或者小于- 2.0，那么x最终会变得无限大；否则，它会保持在0附近。
+
+ 下一个问题：不要使用f64值，考虑使用复数的相同循环。num crate在crates.io提供了我们可以使用的复数类型，因此我们必须在程序的Cargo.toml文件里\[dependencies\]段中为num添加一行引用。下面是到目前为止的整个文件\(我们稍后将添加更多内容\)：
+
+```yaml
+[package]
+name = "mandelbrot"
+version = "0.1.0"
+authors = ["You <you@example.com>"]
+[dependencies]
+num = "0.1.27"
+```
+
+ 现在我们可以写出循环的倒数第二个版本：
+
+```rust
+extern crate num;
+use num::Complex;
+
+#[allow(dead_code)]
+fn complex_square_add_loop(c: Complex<f64>) {
+    let mut z = Complex { re: 0.0, im: 0.0 };
+    loop {
+        z = z * z + c;
+    }
+}
+```
+
+ Complex通常使用z，所以我们重新命名了循环变量。 Complex{re: 0.0, im: 0.0}表达式是我们使用num crate的Complex类型编写Complex值为0的方式。Complex是一种RUST结构类型\(或结构\)，定义如下：
+
+```rust
+struct Complex<T> {
+    /// Real portion of the complex number
+    re: T,
+    
+    /// Imaginary portion of the complex number
+    im: T
+}
+```
 
 
 
