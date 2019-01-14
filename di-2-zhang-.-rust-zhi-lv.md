@@ -1148,13 +1148,97 @@ let bands: Vec<&mut [u8]> =
     pixels.chunks_mut(rows_per_band * bounds.0).collect();
 ```
 
+ 这里，我们将pixel缓冲区划分为多个条带。 缓冲区的chunks\_mut方法返回一个迭代器，该迭代器生成可变的、不重叠的缓冲区切片，每个切片包含rows\_per\_band \* bounds.0 像素--换句话说，rows\_per\_band行像素。 chunks\_mut生成的最后一个切片可能包含比较少的行，但是每行包含相同数量的像素。 最后，迭代器的collect方法构建一个包含这些可变的、不重叠的切片的vector。
+
+ 现在我们可以使用crossbeam库：
+
+```rust
+crossbeam::scope(|spawner| { ... });
+```
+
+ 参数\|spawner\| { ... }是一个Rust闭包表达式。 闭包是一个可以像函数一样调用的值。\|spawner\|是参数列表，{ ... }是函数体。 注意，与使用fn声明的函数不同，我们不需要声明闭包参数的类型；Rust将推断它们及其返回类型。
+
+ 在这种情况下，crossbeam::scope调用闭包，把spawner参数传递给闭包可以用来创建新线程。 crossbeam::scope在返回之前，会等待所有创建的线程完成执行。 这种行为允许Rust确保这些线程在超出范围后不会访问它们的pixels部分，并允许我们确保当crossbeam::scope返回时，图像的计算已经完成。
+
+```rust
+for (i, band) in bands.into_iter().enumerate() {
+```
+
+ 这里我们遍历pixel缓冲区的条带。 into\_iter\(\)迭代器为循环体的每个迭代赋予一个条带的独占所有权，确保一次只能有一个线程对其进行写操作。 我们将在第5章详细解释这是如何工作的。 然后，枚举适配器生成将每个vector成员值与其索引配对的元组。
+
+```rust
+let top = rows_per_band * i;
+let height = band.len() / bounds.0;
+let band_bounds = (bounds.0, height);
+let band_upper_left =
+    pixel_to_point(bounds, (0, top), upper_left, lower_right);
+let band_lower_right =
+    pixel_to_point(bounds, (bounds.0, top + height),
+                   upper_left, lower_right);
+```
+
+ 给定索引和条带的实际大小\(回想一下，最后一个可能比其他的都短\)，我们可以生成渲染所需的那种边界框，但是它只引用条带的缓冲区，而不是整个图像。 类似地，我们重新使用渲染器的pixel\_to\_point函数来查找条带的左上角和右下角在Complex平面上的位置。
+
+```rust
+spawner.spawn(move || {
+    render(band, band_bounds, band_upper_left, band_lower_right);
+});
+```
+
+ 最后，我们创建一个线程，运行闭包move\|\|{…}。 这种语法读起来有点奇怪:它表示没有参数的闭包，其主体是{…}形式。 前面的move关键字表示这个闭包拥有它使用的变量的所有权；特别是，只有闭包可以使用可变的切片条带。
+
+ 如前所述，crossbeam::scope调用确保所有线程在返回之前都已完成，这意味着将图像保存到文件是安全的，这是我们的下一个操作。
+
+###  运行曼德布洛特绘图仪
+
+ 我们在这个程序中使用了几个external crates：num用于Complex运算；用于写PNG文件的img；以及作用域线程创建原语的crossbeam。最终Cargo.toml文件包括所有这些依赖：
+
+```yaml
+[package]
+name = "mandelbrot"
+version = "0.1.0"
+authors = ["You <you@example.com>"]
+[dependencies]
+crossbeam = "0.2.8"
+image = "0.13.0"
+num = "0.1.27"
+```
+
+ 有了这些，我们就可以构建和运行这个程序：
+
+```bash
+$ cargo build --release
+    Updating registry `https://github.com/rust-lang/crates.io-index`
+   Compiling bitflags v0.3.3
+   ...
+   Compiling png v0.4.3
+   Compiling image v0.13.0
+   Compiling mandelbrot v0.1.0 (file:///home/jimb/rust/mandelbrot)
+    Finished release [optimized] target(s) in 42.64 secs
+$ time target/release/mandelbrot mandel.png 4000x3000 -1.20,0.35 -1,0.20
+real 0m1.750s
+user 0m6.205s
+sys 0m0.026s
+$
+```
+
+ 这里，我们使用Unix time程序来查看程序运行的时间;请注意，即使我们花费了超过6秒的处理器时间来计算图像，实际运行的时间也不到2秒。您可以通过注释掉这样做的代码来验证大部分的实时时间都花在了编写图像文件上;在测试这段代码的笔记本电脑上，并发版本将曼德尔布洛特正确的计算时间减少了近4倍。 我们将在第19章中展示如何在这方面进行实质性的改进。
+
+ 这个命令应该创建一个名为mandel.png，您可以使用系统的图像查看程序或web浏览器查看png。 如果一切顺利，应该如图2-7所示。
 
 
 
 
 
+![&#x56FE;2 - 7.  &#x5E76;&#x884C;&#x66FC;&#x5FB7;&#x5E03;&#x6D1B;&#x7279;&#x7A0B;&#x5E8F;&#x7684;&#x8FD0;&#x884C;&#x7ED3;&#x679C;](.gitbook/assets/qq-tu-pian-20190115000027.png)
 
+###  安全是无形的
 
+ 最后，我们得到的并行程序与我们用其他语言编写的程序并没有本质上的区别： 每CPU都有对应分配的条带做计算。当它们都完成时，展示结果。 那么，Rust的并发支持有什么特别之处呢?
+
+ 我们在这里展示的程序，都是我们能编写的所有RUST的程序。 我们在本章中看到的代码在线程之间正确地划分了缓冲区，但是在该代码上有许多小的变化没有\(因此引入了数据竞争\)；这些变体都不能通过Rust编译器的静态检查。 一个C或C++编译器将容易地帮助您探索具有微妙数据竞争的程序的广阔空间；RUST会预先告诉你，什么时候可能出错。
+
+ 在第4章和第5章中，我们将描述Rust的内存安全规则。 第19章解释了这些规则如何确保适当的并发。 但是为了让这些有意义，有必要了解Rust的基本类型，我们将在下一章中介绍。
 
 
 
