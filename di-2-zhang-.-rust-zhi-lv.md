@@ -683,6 +683,331 @@ struct Complex<T> {
 }
 ```
 
+ 上面的代码定义了一个名为Complex的结构体，它有两个成员变量 re和im。Complex是一个泛型结构:可以将类型名后面的&lt;T&gt;读取为“for any type T”。例如，复数&lt;f64&gt;是一个复数，其re和im为f64值，复数&lt;f32&gt;将使用32位浮点数，以此类推。给定这个定义，像Complex {re: R, im: I}这样的表达式会生成一个复杂的值，其re初始化为R, im初始化为I。
+
+ num  crate拥有\*、+和其他算术运算符处理复数运算，因此函数的其余部分的工作方式与以前的版本相同，只是它处理的是复数平面上的点，而不仅仅是实数线上的点。 我们将在第12章中解释如何使Rust的操作符与你自定义的类型一起工作。
+
+ 最后，我们到达了纯数学之旅的目的地。 曼德布洛特集合定义为复数c的集合，其中z不会变成无穷大。 我们最初简单的平方循环是可预测的： 任何大于1或小于-1的值平方循环都会变的很大或者很小。 在每次迭代中加入a + c会使行为更难预测： 如前所述，c的值大于0.25或小于-2导致z变得很大或者很小。 但将游戏扩展到复数会产生真正奇异而美丽的图案，这正是我们想要绘制的。
+
+ 因为复数c有实部和虚部 c.re and c.im，我们把这些看成笛卡尔平面上一个点的x和y坐标，如果c在曼德尔布罗特集合中，就把这个点涂成黑色，否则就涂成浅色。 因此，对于图像中的每个像素，我们必须在复平面上的对应点上运行前面的循环，看看它是逃到无穷大还是永远绕着原点旋转，然后相应地给它上色。
+
+ 无限循环需要一段时间来运行，但是对于没有耐心的人来说有两个诀窍。 首先，如果我们放弃永远运行这个循环，只尝试有限次数的迭代，结果是我们仍然得到了这个集合的一个很好的近似。 我们需要多少次迭代取决于我们想要绘制边界的精确程度。 第二，已经证明，如果z一旦离开以原点为圆心的半径为2的圆，它最终肯定会飞到离原点无限远的地方。
+
+ 这是循环的最终版本，也是程序的核心：
+
+```rust
+extern crate num;
+use num::Complex;
+
+/// Try to determine if `c` is in the Mandelbrot set, using at most `limit`
+/// iterations to decide.
+///
+/// If `c` is not a member, return `Some(i)`, where `i` is the number of
+/// iterations it took for `c` to leave the circle of radius two centered on the
+/// origin. If `c` seems to be a member (more precisely, if we reached the
+/// iteration limit without being able to prove that `c` is not a member),
+/// return `None`.
+fn escape_time(c: Complex<f64>, limit: u32) -> Option<u32> {
+    let mut z = Complex { re: 0.0, im: 0.0 };
+    for i in 0..limit {
+        z = z*z + c;
+        if z.norm_sqr() > 4.0 {
+            return Some(i);
+        }
+    }
+    None
+}
+```
+
+ 这个函数取我们想要测试的复数c是不是曼德布洛特集合中的成员，以及在放弃并声明c可能是成员之前要尝试的迭代次数的限制。
+
+ 函数的返回值是一个Option&lt;u32&gt;类型，RUST的标准库定义Option类型如下:
+
+```rust
+enum Option<T> {
+    None,
+    Some(T),
+}
+```
+
+ Option是枚举类型，通常称为enum，因为它的定义枚举了该类型的值可以是的几个变量：对于任何类型T，Option&lt;T&gt;类型的值是Some\(v\)，其中v是类型T的值；或None，表示没有可用的T值。 与我们前面讨论的Complex类型类似，Option也是一种泛型类型：您可以使用Option&lt;T&gt;来表示任意类型T的可选值。
+
+ 在本例中，escape\_time返回一个Option&lt;u32&gt;，以指示c是否在  
+曼德尔布罗特集合——如果不是，我们需要迭代多长时间才能找到它。
+
+ 如果c不在集合中，escape\_time返回Some\(i\)，其中i是z离开半径为2的圆的迭代次数。 否则，c显然在集合中，escape\_time返回None。
+
+```rust
+for i in 0..limit {
+```
+
+ 前面的示例展示了for循环遍历命令行参数和vector成员值；这个for循环只是遍历整数的范围：0到\(但不包括limit\)limit。
+
+ norm\_sqr\(\)方法调用后返回z到原点的距离的平方。 为了确定z是否离开半径为2的圆，我们不需要计算平方根，我们只需要比较距离的平方是否大于4.0，这更快。
+
+ 您可能已经注意到，我们使用///来标记函数定义上面的注释行；上面对复杂结构的成员的注释也是以///开头的。 这些是文档注释；rustdoc实用程序知道如何解析它们，以及它们所描述的代码，并生成在线文档。Rust标准库的文档以这种形式编写。 我们将在第8章中详细描述文档注释。
+
+ 程序的其余部分涉及决定在哪个分辨率下绘制集合的哪个部分，并将工作分布到几个线程中以加快计算。
+
+### 解析成对的命令行参数
+
+ 该程序需要使用几个命令行参数来控制我们将要编写的图像显示分辨率，也就是曼德布罗特集合如何在图像中显示。由于这些命令行参数都遵循一种常见的形式，下面是一个解析它们的函数：
+
+```rust
+use std::str::FromStr;
+
+/// Parse the string `s` as a coordinate pair, like `"400x600"` or `"1.0,0.5"`.
+///
+/// Specifically, `s` should have the form <left><sep><right>, where <sep> is
+/// the character given by the `separator` argument, and <left> and <right> are both
+/// strings that can be parsed by `T::from_str`.
+///
+/// If `s` has the proper form, return `Some<(x, y)>`. If it doesn't parse
+/// correctly, return `None`.
+fn parse_pair<T: FromStr>(s: &str, separator: char) -> Option<(T, T)> {
+    match s.find(separator) {
+        None => None,
+        Some(index) => {
+            match (T::from_str(&s[..index]), T::from_str(&s[index + 1..])) {
+                (Ok(l), Ok(r)) => Some((l, r)),
+                _ => None
+            }
+        }
+    }
+}
+
+#[test]
+fn test_parse_pair() {
+    assert_eq!(parse_pair::<i32>("", ','), None);
+    assert_eq!(parse_pair::<i32>("10,", ','), None);
+    assert_eq!(parse_pair::<i32>(",10", ','), None);
+    assert_eq!(parse_pair::<i32>("10,20", ','), Some((10, 20)));
+    assert_eq!(parse_pair::<i32>("10,20xy", ','), None);
+    assert_eq!(parse_pair::<f64>("0.5x", 'x'), None);
+    assert_eq!(parse_pair::<f64>("0.5x1.5", 'x'), Some((0.5, 1.5)));
+}
+```
+
+ parse\_pair的定义是一个泛型函数：
+
+```rust
+fn parse_pair<T: FromStr>(s: &str, separator: char) -> Option<(T, T)> {
+```
+
+ 可以将子句&lt;T: FromStr&gt;大声朗读为：" For any type T that implementation the FromStr trait…”。 这有效地使我们能够同时定义整个系列的函数： parse\_pair::&lt;i32&gt;是一个解析一对i32值的函数;&lt;f64&gt;解析一对64位浮点数；如此等等。 这很像C++中的函数模板。 Rust程序员将T称为parse\_pair的参数类型。 当你使用泛型函数时，Rust通常能够为你推断参数类型，并且你不需要像在测试代码中那样将它们显示写出来。
+
+ 我们的返回类型是Option&lt;\(T, T\)&gt;： None，或Some\(\(v1, v2\)\)作为其返回值，其中\(v1, v2\)是两个值的元组，都是T类型。 parse\_pair函数不使用显式的return语句，因此它的返回值是其主体中最后一个\(也是唯一的\)表达式的值：
+
+```rust
+match s.find(separator) {
+    None => None,
+    Some(index) => {
+        ...
+    }
+}
+```
+
+ 字符串类型的find方法在字符串中搜索匹配分隔符的字符。 如果find返回None，这意味着分隔符字符不在字符串中出现，则整个匹配表达式的计算结果为None，表明解析失败。否则，我们将index作为分隔符在字符串中的位置。
+
+```rust
+match (T::from_str(&s[..index]), T::from_str(&s[index + 1..])) {
+    (Ok(l), Ok(r)) => Some((l, r)),
+    _ => None
+}
+```
+
+ 这开始显示match表达式的无穷威力。 匹配的参数是这个元组表达式：
+
+```rust
+(T::from_str(&s[..index]), T::from_str(&s[index + 1..]))
+```
+
+ 表达式&s\[..index\] 和 &s\[index + 1..\]是字符串的切片，位于分隔符的前面和后面。 参数类型T的关联from\_str函数接受这些值，并尝试将它们解析为类型T的值，生成一个元组对象。我们match后对应结果：
+
+```rust
+(Ok(l), Ok(r)) => Some((l, r)),
+```
+
+ 只有当元组的两个元素都是结果类型的Ok变体时，这个模式才匹配，表明两个解析都成功了。如果是这样，则Some\(\(l, r\)\)是匹配表达式的值，因此是函数的返回值。
+
+```rust
+_ => None
+```
+
+ 通配符模式“\_”匹配任何内容，并忽略其值。 如果我们匹配的是这分支，那么parse\_pair就失败了，因此我们计算结果为None，函数的返回值也就为None。
+
+ 现在我们有了parse\_pair，很容易编写一个函数来解析一对浮点坐标，并将它们作为一个Complex&lt;f64&gt;值返回：
+
+```rust
+/// Parse a pair of floating-point numbers separated by a comma as a complex
+/// number.
+fn parse_complex(s: &str) -> Option<Complex<f64>> {
+    match parse_pair(s, ',') {
+        Some((re, im)) => Some(Complex { re, im }),
+        None => None
+    }
+}
+
+#[test]
+fn test_parse_complex() {
+    assert_eq!(parse_complex("1.25,-0.0625"),
+    Some(Complex { re: 1.25, im: -0.0625 }));
+    assert_eq!(parse_complex(",-0.0625"), None);
+}
+```
+
+ parse\_complex函数调用parse\_pair，如果成功解析坐标，则创建一个Complex对象作为返回值，如果失败则返回None对象。
+
+ 如果仔细阅读，你可能已经注意到我们使用了一个简单的符号来创建Complex对象。用相同名称的变量初始化struct的字段是很常见的，因此不必强制您编写Complex{re: re, im: im}， Rust允许您简单地编写Complex{re, im}。 这是类似JavaScript和Haskell中的标记方式。
+
+###  从像素到复数的映射
+
+ 该程序需要在二维坐标空间中工作：输出图像中的每个像素对应于Complex平面上的一个点。 这两个空间之间的关系取决于我们要绘制曼德布洛特集的哪一部分，以及所请求的图像的分辨率\(由命令行参数决定\)。 下面的函数将图像空间转换为Complex空间：
+
+```rust
+/// Given the row and column of a pixel in the output image, return the
+/// corresponding point on the complex plane.
+///
+/// `bounds` is a pair giving the width and height of the image in pixels.
+/// `pixel` is a (column, row) pair indicating a particular pixel in that image.
+/// The `upper_left` and `lower_right` parameters are points on the complex
+/// plane designating the area our image covers.
+fn pixel_to_point(bounds: (usize, usize),
+                  pixel: (usize, usize),
+                  upper_left: Complex<f64>,
+                  lower_right: Complex<f64>)
+    -> Complex<f64>
+{
+    let (width, height) = (lower_right.re - upper_left.re,
+                           upper_left.im - lower_right.im);
+    Complex {
+             re: upper_left.re + pixel.0 as f64 * width / bounds.0 as f64,
+             im: upper_left.im - pixel.1 as f64 * height / bounds.1 as f64
+             // Why subtraction here? pixel.1 increases as we go down,
+             // but the imaginary component increases as we go up.
+    }
+}
+
+#[test]
+fn test_pixel_to_point() {
+    assert_eq!(pixel_to_point((100, 100), (25, 75),
+                              Complex { re: -1.0, im: 1.0 },
+                              Complex { re: 1.0, im: -1.0 }),
+               Complex { re: -0.5, im: -0.5 });
+}
+```
+
+ 图2-4  演示 pixel\_to\_point 执行的计算。
+
+![&#x56FE;2 - 4     Complex&#x5E73;&#x9762;&#x4E0E;&#x56FE;&#x50CF;&#x50CF;&#x7D20;&#x4E4B;&#x95F4;&#x7684;&#x5173;&#x7CFB;](.gitbook/assets/qq-tu-pian-20190112172856.png)
+
+ pixel\_to\_point的代码是简单的计算，所以我们不会详细解释。 然而，有一些事情需要指出。 这种形式的表达式引用元组元素：
+
+```rust
+pixel.0
+```
+
+ 这是指元组像素的第一个元素。
+
+```rust
+pixel.0 as f64
+```
+
+ 这是Rust的类型转换语法：它将pixel.0转换成f64的值类型。 与C和C++不同，Rust通常拒绝隐式地在数字类型之间进行转换；你必须写出你需要转换的类型。 这可能很乏味，但是明确地说明发生了哪些转换以及什么时候进行转换是非常有用的。 隐式整数转换看起来很简单，但在实际的C和C++代码中，它们一直是bug和安全漏洞的常见来源。
+
+### 绘制集合
+
+ 要绘制曼德布洛特集合，对于图像中的每一个像素，我们只需将escape\_time应用于Complex平面上的对应点，并根据结果对像素进行着色：
+
+```rust
+/// Render a rectangle of the Mandelbrot set into a buffer of pixels.
+///
+/// The `bounds` argument gives the width and height of the buffer `pixels`,
+/// which holds one grayscale pixel per byte. The `upper_left` and `lower_right`
+/// arguments specify points on the complex plane corresponding to the upper-
+/// left and lower-right corners of the pixel buffer.
+fn render(pixels: &mut [u8],
+          bounds: (usize, usize),
+          upper_left: Complex<f64>,
+          lower_right: Complex<f64>)
+{
+    assert!(pixels.len() == bounds.0 * bounds.1);
+    for row in 0 .. bounds.1 {
+        for column in 0 .. bounds.0 {
+            let point = pixel_to_point(bounds, (column, row),
+                                       upper_left, lower_right);
+            pixels[row * bounds.0 + column] =
+                   match escape_time(point, 255) {
+                       None => 0,
+                       Some(count) => 255 - count as u8
+                   };
+        }
+    }
+}
+```
+
+ 这看起来应该很熟悉。
+
+```rust
+pixels[row * bounds.0 + column] =
+    match escape_time(point, 255) {
+        None => 0,
+        Some(count) => 255 - count as u8
+    };
+```
+
+ 如果escape\_time返回说明该点属于集合，则渲染颜色为对应的像素黑色\(0\)，对于耗费周期较长的数字，则渲染为颜色较暗。
+
+###  编写图像文件
+
+ image crate提供了多种图像格式的读写功能，以及一些基本的图像操作功能。 特别是，它包含一个PNG图像文件格式的编码器，该程序使用该编码器保存计算的最终结果。 若要使用图像，请将以下行添加到  
+Cargo.toml文件的\[dependencies\]段里：
+
+```yaml
+image = "0.13.0"
+```
+
+ 有了这些，我们可以这样写：
+
+```rust
+extern crate image;
+
+use image::ColorType;
+use image::png::PNGEncoder;
+use std::fs::File;
+
+/// Write the buffer `pixels`, whose dimensions are given by `bounds`, to the
+/// file named `filename`.
+fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize))
+    -> Result<(), std::io::Error>
+{
+    let output = File::create(filename)?;
+    let encoder = PNGEncoder::new(output);
+    encoder.encode(&pixels,
+                   bounds.0 as u32, bounds.1 as u32,
+                   ColorType::Gray(8))?;
+    Ok(())
+}
+```
+
+ 这个函数的运算很简单： 它打开一个文件并尝试将图像写入其中。pixels向encode传送像素数据，bounds则表示图像的宽和高，最后一个参数说明如何以像素表示字节：值ColorType::Gray\(8\)表示每个字节是一个8位灰度值。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
