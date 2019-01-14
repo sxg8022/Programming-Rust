@@ -992,17 +992,161 @@ fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize))
 
  这个函数的运算很简单： 它打开一个文件并尝试将图像写入其中。pixels向encode传送像素数据，bounds则表示图像的宽和高，最后一个参数说明如何以像素表示字节：值ColorType::Gray\(8\)表示每个字节是一个8位灰度值。
 
+ 这些都是简单的。这个函数的有趣之处在于，当出现问题时，它是如何处理的。 如果我们遇到错误，我们需要将其反馈给调用者。 如前所述，Rust中容易出错的函数应该返回一个Result对象，成功时返回Ok\(s\)，其中s是成功值，失败时返回Err\(e\)，其中e是错误代码。 write\_image的成功和错误类型是什么?
 
+ 当一切正常时，write\_image函数没有返回任何有用的值；它把所有我们感兴趣的东西都写到文件中。所以它的成功类型是unit type\(\)（空单元类型），之所以这么叫是因为它只有一个值，也就是write\(\)。空单元类型类似于C和C++中的void。
 
+ 当出现错误时，这是因为File::create或encoder无法创建文件。encode无法将图像写入它；I/O操作返回一个错误代码。 file::create的返回类型为Result&lt;std::fs::File, std::io::Error&gt;，而encoder.encode的返回类型是Result&lt;\(\)， std::io::Error&gt;，所以两者共享相同的错误类型，std::io::Error。write\_image函数也可以这样做。
 
+ 考虑对File::create的调用。如果成功打开返回Ok\(f\)，write\_image可以继续将图像数据写入f，对于错误代码e，write\_image应该立即返回Err\(e\)作为它的返回值。 对encoder.encode的调用必须类似地处理:失败应该立即返回，并传递错误代码。
 
+ ?操作符的存在是为了方便这些检查。而不是把一切都写出来，类似如下的写法：
 
+```rust
+let output = match File::create(filename) {
+    Ok(f) => { f }
+    Err(e) => { return Err(e); }
+};
+```
 
+ 你可以使用相同的和更清晰的写法：
 
+```rust
+let output = File::create(filename)?;
+```
 
+![](.gitbook/assets/2.jpg)
 
+在main函数中尝试使用“?”，这是初学者常犯的错误。然而，由于main没有返回值，所以这将不起作用;您应该使用Result的expect方法。 “?”运算符仅在有返回Result的函数中可以用。
 
+ 这里我们可以用另一种简写法。因为返回这种形式的类型Result&lt;T, std::io::Error&gt;，对于某些T类型是如此常见——对于执行I/O的函数，这通常是正确的类型——Rust标准库为它定义了一个简写。 在std::io模块中，我们有以下定义：
 
+```rust
+// The std::io::Error type.
+struct Error { ... };
+
+// The std::io::Result type, equivalent to the usual `Result`, but
+// specialized to use std::io::Error as the error type.
+type Result<T> = std::result::Result<T, Error>
+```
+
+ 如果我们使用std::io::Result声明将这个定义带入作用域，我们可以将write\_image的返回类型更简洁地写成Result&lt;\(\)&gt;。这是您在阅读std::io，std::fs和其他地方的函数文档时经常看到这样的写法。
+
+###  并行曼德布洛特程序
+
+ 最后，所有的部分都准备好了，我们可以向你展示main的功能，我们可以在其中使用并发特性。 首先，为了简单起见，使用非并发版本：
+
+```rust
+use std::io::Write;
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 5 {
+        writeln!(std::io::stderr(),
+                 "Usage: mandelbrot FILE PIXELS UPPERLEFT LOWERRIGHT")
+                 .unwrap();
+        writeln!(std::io::stderr(),
+                 "Example: {} mandel.png 1000x750 -1.20,0.35 -1,0.20",
+                 args[0])
+                 .unwrap();
+        std::process::exit(1);
+    }
+    let bounds = parse_pair(&args[2], 'x')
+                 .expect("error parsing image dimensions");
+    let upper_left = parse_complex(&args[3])
+                 .expect("error parsing upper left corner point");
+    let lower_right = parse_complex(&args[4])
+                 .expect("error parsing lower right corner point");
+    let mut pixels = vec![0; bounds.0 * bounds.1];
+    render(&mut pixels, bounds, upper_left, lower_right);
+    write_image(&args[1], &pixels, bounds)
+                .expect("error writing PNG file");
+}
+```
+
+ 将命令行参数收集到一个字符串vector中之后，我们解析每个参数，然后开始计算。
+
+```rust
+let mut pixels = vec![0; bounds.0 * bounds.1];
+```
+
+ 宏调用vec!\[v; n\]创建一个vector，有n个成员，每个成员初始化为v，因此前面的代码创建一个长度为bounds.0 \* bounds.1的vector，每个成员值被初始化为0，其中界限为命令行解析的图像分辨率。 我们将使用这个vector作为矩形数组，而且灰度像素值用一字节表示，如下所示  
+图2 - 5.
+
+![&#x56FE;2 - 5.  &#x4F7F;&#x7528;vector&#x4F5C;&#x4E3A;pixel&#x7684;&#x77E9;&#x5F62;&#x6570;&#x7EC4;](.gitbook/assets/qq-tu-pian-20190114161705.png)
+
+下面一行是我们感兴趣的：
+
+```rust
+render(&mut pixels, bounds, upper_left, lower_right);
+```
+
+ 这将调用render函数来实际计算图像。 表达式&mut pixels借用了pixels缓冲区对象的可变引用，允许render用计算的灰度值填充它，即使pixels仍然是vector的所有者。 其余参数传递图像的尺寸和我们选择绘制的Complex平面的矩形。
+
+```rust
+write_image(&args[1], &pixels, bounds)
+            .expect("error writing PNG file");
+```
+
+ 最后，我们将pixel缓冲区作为PNG文件写入磁盘。 在这种情况下，我们向缓冲区传递一个共享\(非可变\)引用，因为write\_image不需要修改缓冲区的内容。
+
+ 将这种计算分布到多个处理器上的很自然方法是将图像分割为多个部分，并让每个处理器处理一个部分，分别为那部分像素着色。 为了简单起见，我们将它分成水平条带，如图2 - 6所示，当所有处理器都完成时，我们可以把像素写到磁盘上。
+
+![&#x56FE;2 - 6.  &#x5C06;pixel&#x7F13;&#x51B2;&#x533A;&#x5212;&#x5206;&#x4E3A;&#x591A;&#x4E2A;&#x6761;&#x5E26;&#x8FDB;&#x884C;&#x5E76;&#x884C;&#x6E32;&#x67D3;](.gitbook/assets/qq-tu-pian-20190114163551.png)
+
+ crossbeam crate提供了许多有价值的并发工具，包括一个作用域线程工具，它正好满足我们这里的需要。 要使用它，我们必须在我们的货物上加上以下这行在Cargo.toml文件：
+
+```yaml
+crossbeam = "0.2.8"
+```
+
+ 然后，我们必须将以下行添加到 main.rs 文件的顶部
+
+```rust
+extern crate crossbeam;
+```
+
+ 然后我们需要取出调用render的单行代码，并将其替换为以下代码：
+
+```rust
+let threads = 8;
+let rows_per_band = bounds.1 / threads + 1;
+{
+    let bands: Vec<&mut [u8]> =
+        pixels.chunks_mut(rows_per_band * bounds.0).collect();
+    
+    crossbeam::scope(|spawner| {
+        for (i, band) in bands.into_iter().enumerate() {
+            let top = rows_per_band * i;
+            let height = band.len() / bounds.0;
+            let band_bounds = (bounds.0, height);
+            let band_upper_left =
+                pixel_to_point(bounds, (0, top), upper_left, lower_right);
+            let band_lower_right =
+                pixel_to_point(bounds, (bounds.0, top + height),
+                upper_left, lower_right);
+            spawner.spawn(move || {
+                render(band, band_bounds, band_upper_left, band_lower_right);
+            });
+        }
+    });
+    
+}
+```
+
+ 用通常的方法来分解：
+
+```rust
+let threads = 8;
+let rows_per_band = bounds.1 / threads + 1;
+```
+
+ 这里我们决定使用8个线程。然后我们计算每个条带应该有多少行像素。 因为条带的高度是rows\_per\_band，而图像的总体宽度是bounds.0，条带的面积\(以像素为单位\)为rows\_per\_band \* bounds.0。我们按行向上数行数，确保所有条带能够覆盖整个图像，即使不用多线程。
+
+```rust
+let bands: Vec<&mut [u8]> =
+    pixels.chunks_mut(rows_per_band * bounds.0).collect();
+```
 
 
 
