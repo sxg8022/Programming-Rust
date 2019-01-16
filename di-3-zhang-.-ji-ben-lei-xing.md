@@ -28,7 +28,221 @@ There are many, many types of books in the world, which makes good sense, becaus
 
  与JavaScript或Python之类的动态类型语言相比，Rust需要您预先进行更多的设计和策划： 您必须详细说明函数的参数和返回值的类型、结构类型的成员以及其他一些构造函数。 然而，RUST的两个特性使它的繁琐比您预期的要少：
 
-* 
+*  根据您写出的类型，Rust将为您推断出其余的大部分类型。 实际上，对于给定的变量或表达式，通常只有一种类型有效；在这种情况下，Rust允许您省略类型。 例如，你可以写出函数中的每一种类型，就像这样：
+
+```rust
+fn build_vector() -> Vec<i16> {
+    let mut v: Vec<i16> = Vec::<i16>::new();
+    v.push(10i16);
+    v.push(20i16);
+    v
+}
+```
+
+ 但这是混乱和重复的。 给定函数的返回类型，很明显v必须是一个Vec&lt;i16&gt;，一个16位有符号整数的vector；其他类型都不可以。 由此可以推出vector的每个成员值都必须是i16类型。 这正是Rust的类型推断的推断原理，它允许您改为这样写：
+
+```rust
+fn build_vector() -> Vec<i16> {
+    let mut v = Vec::new();
+    v.push(10);
+    v.push(20);
+    v
+}
+```
+
+ 这两个定义完全等价；两种不同的写法，但Rust将编译成相同的机器码。 类型推断在很大程度上实现了动态类型语言的易读性，同时仍然在编译时捕获类型错误。
+
+*  函数可以是通用的：当函数的用途和实现足够通用时，可以将其定义为在满足必要条件的任何类型集上工作。 单个定义可以涵盖一组开放式的用例。
+
+ 在Python和JavaScript中，所有函数都以这种方式工作:函数可以对具有该函数所需的属性和方法的任何值进行操作。 \(这个特征通常被称为“鸭子类型”：如果它像鸭子一样嘎嘎叫，那它就是鸭子。\) 但正是这种灵活性使得这些语言很难及早发现类型错误；测试通常是捕捉此类错误的唯一方法。 Rust的泛型函数为该语言提供了一定程度的灵活性，同时仍然在编译时捕获所有类型错误。
+
+ 尽管泛型函数具有灵活性，但它们与非泛型函数一样高效。 我们将在第11章中详细讨论泛型函数。
+
+ 本章的其余部分将从头开始介绍Rust的类型，从简单的机器类型\(如整数和浮点值\)开始，然后展示如何将它们组合成更复杂的结构。在适当的情况下，我们将描述Rust如何在内存中表示这些类型的值，以及它们的性能特征。
+
+ 下面是您将在Rust中看到的各种类型的简述。 这张表显示了Rust的基本类型，一些来自标准库的非常常见的类型，以及一些用户定义类型的例子：
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align:left">Type</th>
+      <th style="text-align:left">Description</th>
+      <th style="text-align:left">Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align:left">
+        <p>i8, i16, i32, i64,</p>
+        <p>u8, u16, u32, u64</p>
+      </td>
+      <td style="text-align:left">有符号和无符号整数</td>
+      <td style="text-align:left">
+        <p>42, -5i8, 0x400u16, 0o100i16, 20_922_789_888_000u64,</p>
+        <p>b'*' (u8 类型字节字面量)</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="text-align:left">isize, usize</td>
+      <td style="text-align:left">有符号和无符号整数，大小与机器上的地址相同(32或64位)</td>
+      <td style="text-align:left">137, -0b0101_0010isize, 0xffff_fc00usize</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">f32, f64</td>
+      <td style="text-align:left">IEEE浮点数，单精度和双精度</td>
+      <td style="text-align:left">IEEE浮点数，单精度和双精度</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">bool</td>
+      <td style="text-align:left">布尔型</td>
+      <td style="text-align:left">true, false</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">char</td>
+      <td style="text-align:left">Unicode字符，32位宽</td>
+      <td style="text-align:left">'*', '\n', '字', '\x7f', '\u{CA0}'</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">(char, u8, i32)</td>
+      <td style="text-align:left">元组：允许混合类型</td>
+      <td style="text-align:left">('%', 0x7f, -1)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">()</td>
+      <td style="text-align:left">“unit”(空的)的元组</td>
+      <td style="text-align:left">()</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">struct S { x: f32, y: f32 }</td>
+      <td style="text-align:left">字段被命名的结构</td>
+      <td style="text-align:left">S { x: 120.0, y: 209.0 }</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">struct T(i32, char);</td>
+      <td style="text-align:left">元组结构</td>
+      <td style="text-align:left">T(120, 'X')</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">struct E;</td>
+      <td style="text-align:left">单位结构；没有字段</td>
+      <td style="text-align:left">E</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">enum Attend { OnTime, Late(u32) }</td>
+      <td style="text-align:left">枚举类型</td>
+      <td style="text-align:left">Attend::Late(5), Attend::OnTime</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">Box
+        <Attend>
+      </td>
+      <td style="text-align:left">Box：在堆中指向值的指针</td>
+      <td style="text-align:left">Box::new(Late(15))</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">&i32, &mut i32</td>
+      <td style="text-align:left">引用和可变引用：非所有权的指针，不能超过它们的声明周期</td>
+      <td style="text-align:left">&s.y, &mut v</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">String</td>
+      <td style="text-align:left">UTF-8字符串，可变大小</td>
+      <td style="text-align:left">"ラーメン: ramen".to_string()</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">&str</td>
+      <td style="text-align:left">引用str:非拥有权的指针utf - 8的文本，字符串的字面量类型</td>
+      <td style="text-align:left">"そば: soba", &s[0..12]</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">[f64; 4], [u8; 256]</td>
+      <td style="text-align:left">数组,固定长度；所有类型相同的元素</td>
+      <td style="text-align:left">[1.0, 0.0, 0.0, 1.0], [b' '; 256]</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">Vec
+        <f64>
+      </td>
+      <td style="text-align:left">vector,长度可变；所有类型相同的元素</td>
+      <td style="text-align:left">vec![0.367, 2.718, 7.389]</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">&[u8], &mut [u8]</td>
+      <td style="text-align:left">对切片的引用:对数组或vector的一部分的引用，包括指针和长度</td>
+      <td style="text-align:left">&v[10..20], &mut a[..]</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">&Any, &mut Read</td>
+      <td style="text-align:left">trait对象：引用实现给定方法集的任何值</td>
+      <td style="text-align:left">value as &Any, &mut file as &mut Read</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">fn(&str, usize) -> isize</td>
+      <td style="text-align:left">函数指针</td>
+      <td style="text-align:left">i32::saturating_add</td>
+    </tr>
+    <tr>
+      <td style="text-align:left">(Closure types have no written form)</td>
+      <td style="text-align:left">闭包</td>
+      <td style="text-align:left">|a, b| a<em>a + b</em>b</td>
+    </tr>
+  </tbody>
+</table> 除以下内容外，本章将讨论这些类型中的大多数：
+
+* 我们在第9章中给出了结构类型。
+* 我们在第10章给出枚举类型。
+*  我们在第11章中描述trait对象。
+*  我们在这里描述String和&str的基本内容，但在 第17章会有更详细的介绍。
+*  我们将在第14章中讨论函数和闭包类型。
+
+### 机器类型
+
+ Rust类型系统的基础是一组固定宽度的数字类型，选择这些类型是为了匹配几乎所有现代处理器直接在硬件中实现的类型，包括布尔型和字符型。
+
+ Rust的数字类型的名称遵循一个规则模式，以位的形式写出它们的宽度，以及它们使用的表示形式：
+
+| Size（bits） | Unsigned integer | Signed integer | Floating-point |
+| :--- | :--- | :--- | :--- |
+| 8 | u8 | i8 |  |
+| 16 | u16 | i16 |  |
+| 32 | u32 | i32 | f32 |
+| 64 | u64 | i64 | f64 |
+| Machine word | usize | isize |  |
+
+ 在这里，机器字是代码运行的机器上的地址大小的值，通常为32或64位。
+
+### Integer类型
+
+ Rust的无符号整数类型使用它们的全范围来表示正数和零：
+
+| Type | Range |
+| :--- | :--- |
+| u8 | 0 to 28–1 \(0 to 255\) |
+| u16 | 0 to 216−1 \(0 to 65,535\) |
+| u32 | 0 to 232−1 \(0 to 4,294,967,295\) |
+| u64 | 0 to 264−1 \(0 to 18,446,744,073,709,551,615, or 18 quintillion\) |
+| usize | 0 to either 232−1 or 264−1 |
+
+ Rust的有符号整数类型使用这两种类型的补码表示，使用与对应的无符号类型相同的位模式来覆盖正负值的范围：
+
+| Type | Range |
+| :--- | :--- |
+| i8 | −27 to 27−1 \(−128 to 127\) |
+| i16 | −215 to 215−1 \(−32,768 to 32,767\) |
+| i32 | −231 to 231−1 \(−2,147,483,648 to 2,147,483,647\) |
+| i64 | −263 to 263−1 \(−9,223,372,036,854,775,808 to 9,223,372,036,854,775,807\) |
+| isize |  −231 to 231−1, 或者 −263 to 263−1 |
+
+ Rust通常使用u8类型作为字节值。 例如从文件或套接字读取数据会产生u8类型数据流。
+
+ 与C和C++不同，Rust将字符与数字类型区别对待；char既不是u8也不是i8。我们在52页的“字符”中描述Rust的char类型。
+
+ usize和isize类型类似于C和C++中的size\_t和ptrdiff\_t类型。usize类型是无符号的，isize是有符号的。 它们的精度取决于目标机器上地址空间的大小： 它们在32位架构上有32位长，在64位架构上有64位长。 Rust要求数组索引为usize类型。在某些数据结构中，表示数组或向量的大小或元素个数的计数的值通常也具有usize类型。
+
+
+
+
+
 
 
 
