@@ -237,13 +237,76 @@ fn build_vector() -> Vec<i16> {
 
  与C和C++不同，Rust将字符与数字类型区别对待；char既不是u8也不是i8。我们在52页的“字符”中描述Rust的char类型。
 
- usize和isize类型类似于C和C++中的size\_t和ptrdiff\_t类型。usize类型是无符号的，isize是有符号的。 它们的精度取决于目标机器上地址空间的大小： 它们在32位架构上有32位长，在64位架构上有64位长。 Rust要求数组索引为usize类型。在某些数据结构中，表示数组或向量的大小或元素个数的计数的值通常也具有usize类型。
+ usize和isize类型类似于C和C++中的size\_t和ptrdiff\_t类型。usize类型是无符号的，isize是有符号的。 它们的精度取决于目标机器上地址空间的大小： 它们在32位架构上有32位长，在64位架构上有64位长。 Rust要求数组索引为usize类型。在某些数据结构中，表示数组或vector的大小或元素个数的计数的值通常也具有usize类型。
 
+ 在调试构建中，Rust检查算术中的整数溢出：
 
+```rust
+let big_val = std::i32::MAX;
+let x = big_val + 1; // panic: arithmetic operation overflowed
+```
 
+ 在一个发布版本中，这个加法会被包装成一个负数\(不像C++，有符号整数溢出是未定义的行为\)。 但是除非你想要永远放弃调试，否则要指望它是一个坏主意。 当你想要包装算法时，使用方法：
 
+```rust
+let x = big_val.wrapping_add(1); // ok
+```
 
+ RUST的整数字面量可以采取一个后缀表示它们的类型：42u8是一个u8值，1729isize是一个isize值。 在这种情况下，可以省略整数字面量的后缀Rust将尝试从上下文中推断它的类型。 这种推理通常标识一个惟一的类型，但有时几种类型中的任何一种都可以运行。 在这种情况下，如果有可能的话，Rust默认为i32。 否则Rust将类型歧义做为错误。
 
+ 前缀0x、0o和0b指定十六进制、八进制和二进制字面量。
+
+ 为了使长数字更清晰，可以在数字中插入下划线。 例如，可以将最大的u32值写成4\_294\_967\_295。 下划线的确切位置并不重要，因此可以将十六进制或二进制数字分成四组而不是三组，如0xffff\_ffff中所示，或者从数字中设置类型后缀，如127\_u8中所示。
+
+ 一些整数字面量的例子：
+
+| Literal | Type | Decimal Value |
+| :--- | :--- | :--- |
+| 116i8 | i8 | 116 |
+| 0xcafeu32 | u32 | 51966 |
+| 0b0010\_1010 | Inferred | 42 |
+| 0o106 | Inferred | 70 |
+
+ 虽然数字类型和char类型是不同的，但是Rust确实提供了字节字面量，u8值的类似字符的字面量：b' x ' 表示字符的ASCII码 X，作为u8的值。 因为A的ASCII码是65，所以文字b'A'和65u8完全相等。 只有ASCII字符可以以字节形式出现。
+
+ 有几个字符不能简单地放在单引号后面，因为这样会造成语法上的歧义或难以阅读。 以下字符需要在前面加上反斜杠：
+
+| Character | Byte  literal | Numeric equivalent |
+| :--- | :--- | :--- |
+| Single quote, ' | b'\'' | 39u8 |
+| Backslash, \ | b'\\' | 92u8 |
+| Newline | b'\n' | 10u8 |
+| Carriage return | b'\r' | 13u8 |
+| Tab | b'\t' | 9u8 |
+
+ 对于难以编写或读取的字符，可以用十六进制来编写它们的代码。 形式b'\xHH'的字节字面量，其中HH是任意两位十六进制数，表示其值为HH的字节。 您可以将ASCII“转义”控制字符的字节字面量写成b'\x1b'，因为ASCII码的作用是“转义”是27，或用十六进制表示为1B。 由于字节字面量只是u8值的另一种表示法，考虑一个简单的数字字面量是否更清晰： 只有当你想强调这个值代表ASCII码时，使用b'\x1b'而不是简单的27才有意义。
+
+ 可以使用as操作符将一种整数类型转换为另一种整数类型。 我们将在139页的“类型强制转换”中解释转换是如何工作的，下面是一些示例：
+
+```rust
+assert_eq!( 10_i8 as u16, 10_u16); // in range
+assert_eq!( 2525_u16 as i16, 2525_i16); // in range
+assert_eq!( -1_i16 as i32, -1_i32); // sign-extended
+assert_eq!(65535_u16 as i32, 65535_i32); // zero-extended
+// Conversions that are out of range for the destination
+// produce values that are equivalent to the original modulo 2^N,
+// where N is the width of the destination in bits. This
+// is sometimes called "truncation".
+assert_eq!( 1000_i16 as u8, 232_u8);
+assert_eq!(65535_u32 as i16, -1_i16);
+assert_eq!( -1_i8 as u8, 255_u8);
+assert_eq!( 255_u8 as i8, -1_i8);
+```
+
+ 和其他类型的值一样，整数也可以有方法。 标准库提供了一些基本操作，您可以在在线文档中查找这些操作。 注意，文档包含类型的单独页面\( 搜索例如，“i32\(原语类型\)”\)，以及用于该类型的模块\(搜索例如，“std::i32”\)。例如：
+
+```rust
+assert_eq!(2u16.pow(4), 16); // exponentiation
+assert_eq!((-4i32).abs(), 4); // absolute value
+assert_eq!(0b101101u8.count_ones(), 4); // population count
+```
+
+ 字面量的类型后缀在这里是必需的： Rust在知道一个值的类型之前不能查找它的方法。 然而，在实际代码中，通常有额外的上下文来消除类型的歧义，因此不需要后缀。
 
 
 
