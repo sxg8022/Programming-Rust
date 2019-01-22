@@ -438,6 +438,56 @@ assert_eq!(std::char::from_digit(2, 10), Some('2'));
 
  元组是一对，三倍，四倍，…各种类型的值。 可以将元组写成元素序列，由逗号分隔，括号括起。 例如\(“Brazil”，1985\)是一个元组，其第一个元素是静态分配的字符串，第二个元素是整数；它的类型是\(&str, i32\)\(或者1985 Rust推断的任何整数类型\)。 给定一个元组值t，可以将其元素访问为t.0，t.1，以此类推。
 
+ 元组不太像数组:首先，元组的每个元素可以有不同的类型，而数组的元素必须都是相同的类型。 此外，元组只允许常量作为索引，如t.4。你不能写 t.i 或者 t\[i\] 来得到第 i 个元素。
+
+ Rust代码经常使用元组类型从函数返回多个值。 例如，字符串片上的split\_at方法将一个字符串分成两半并返回它们，它的声明如下：
+
+```rust
+fn split_at(&self, mid: usize) -> (&str, &str);
+```
+
+ 返回类型\(&str， &str\)是两个字符串片的元组。您可以使用模式匹配语法将返回值的每个元素赋给不同的变量：
+
+```rust
+let text = "I see the eigenvalue in thine eye";
+let (head, tail) = text.split_at(21);
+assert_eq!(head, "I see the eigenvalue ");
+assert_eq!(tail, "in thine eye");
+```
+
+ 这样更容易懂：
+
+```rust
+let text = "I see the eigenvalue in thine eye";
+let temp = text.split_at(21);
+let head = temp.0;
+let tail = temp.1;
+assert_eq!(head, "I see the eigenvalue ");
+assert_eq!(tail, "in thine eye");
+```
+
+ 您还会看到元组被用作一种极简结构类型。 例如，第2章中Mandelbrot程序，我们需要将图像的宽度和高度传递给绘制图像的函数并将其写入磁盘。 我们可以声明一个具有宽度和高度成员的结构体，但是对于一些很明显的东西，这是一个很重的符号，所以我们只使用了一个元组：
+
+```rust
+/// Write the buffer `pixels`, whose dimensions are given by `bounds`, to the
+/// file named `filename`.
+fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize))
+-> Result<(), std::io::Error>
+{ ... }
+```
+
+ 边界参数的类型是\(usize, usize\)，它是两个usize值的元组。 不可否认，我们也可以写出单独的宽度和高度参数，而机器代码在这两种情况下都是一样的。这样写更清晰些。 我们认为边界是一个值，而不是两个，使用元组可以准确表达我们的意思。
+
+ 另一种常用的元组类型是\(\)，这可能令人惊讶。 这通常称为单元类型，因为它只有一个值，也就是write\(\)。 Rust在没有任何有意义的值的情况下使用单元类型，但是上下文仍然需要某种类型。
+
+
+
+
+
+
+
+
+
 
 
 
