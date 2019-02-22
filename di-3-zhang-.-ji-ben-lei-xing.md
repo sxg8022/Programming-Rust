@@ -661,25 +661,100 @@ v.reverse();
 assert_eq!(v, vec!["panama", "a canal", "a plan", "a man"]);
 ```
 
- 在这里，reverse方法实际上是在 slice 上定义的，但是调用隐式地从vector借用了一个 &mut \[&str\]  slice，并对其调用reverse。
+ 在这里，reverse方法实际上是在 slice 上定义的，但是调用隐式地从vector借用了一个 &mut \[&str\]  slice，并对其调用reverse 。
 
+ Vec是RUST的一种基本类型——几乎在任何需要动态大小列表的地方都可以使用它——因此有许多其他方法可以构造新的vector或扩展现有的vector。我们将在第16章中讨论它们。
 
+ Vec&lt;T&gt;由三个值组成： 指向堆分配缓冲区的指针，该缓冲区为保存元素而分配的；缓冲区能够存储的元素的数量；以及它现在包含的元素数\(换句话说，它的长度\)。 当缓冲区达到其容量时，向vector中添加另一个元素需要分配更大的缓冲区，将当前内容复制到其中，更新vector指针和容量以描述新缓冲区，最后释放旧缓冲区。
 
+ 如果你事先知道一个vector需要的元素个数，一开始，而不用调用Vec::new，而是调用Vec::with\_capacity来创建一个具有足够大的缓冲区来容纳所有数据的vector；然后，您可以一次向vector添加1个元素，而不会导致任何重新分配内存。 vec ! 宏使用了这样的技巧，因为它知道最终vector将包含多少元素。 注意，这只确定了vector的初始大小；如果超出了估计，这个vector就会像平常一样增大它的存储空间。
 
+ 许多库函数都在寻找使用Vec::with\_capacity的机会，而不是使用Vec::new 。 例如，在collect示例中，迭代器0..5预先知道它将产生5个值，collect函数利用这个值预先分配它返回的具有正确容量的vector。 我们将在第15章中看到它是如何工作的。
 
+ 就像vector的len方法返回它现在包含的元素数量一样，它的capacity方法返回它在不重新分配的情况下可以容纳的元素数量：
 
+```rust
+let mut v = Vec::with_capacity(2);
+assert_eq!(v.len(), 0);
+assert_eq!(v.capacity(), 2);
 
+v.push(1);
+v.push(2);
+assert_eq!(v.len(), 2);
+assert_eq!(v.capacity(), 2);
 
+v.push(3);
+assert_eq!(v.len(), 3);
+assert_eq!(v.capacity(), 4);
+```
 
+ 您将在代码中看到的容量可能与这里显示的不同。Vec和系统的堆分配器可能会收集请求，即使在with\_capacity情况下也是如此。
 
+ 您可以在vector中任意位置插入和删除元素，尽管这些操作将插入点之后的所有元素向前或向后移动，因此如果vector很长，它们可能很慢：
 
+```rust
+let mut v = vec![10, 20, 30, 40, 50];
 
+// Make the element at index 3 be 35.
+v.insert(3, 35);
+assert_eq!(v, [10, 20, 30, 35, 40, 50]);
 
+// Remove the element at index 1.
+v.remove(1);
+assert_eq!(v, [10, 30, 35, 40, 50]);
+```
 
+ 您可以使用pop方法删除最后一个元素并返回它。更准确地说，从Vec&lt;T&gt;取出一个值会返回一个Option&lt;T&gt;： 如果vector已经为空，则为None；如果最后一个元素为v，则为Some\(v\)：
 
+```rust
+let mut v = vec!["carmen", "miranda"];
+assert_eq!(v.pop(), Some("miranda"));
+assert_eq!(v.pop(), Some("carmen"));
+assert_eq!(v.pop(), None);
+```
 
+ 你可以使用for循环来迭代一个vector：
 
+```rust
+// Get our command-line arguments as a vector of Strings.
+let languages: Vec<String> = std::env::args().skip(1).collect();
+for l in languages {
+    println!("{}: {}", l,
+             if l.len() % 2 == 0 {
+                 "functional"
+             } else {
+                 "imperative"
+             });
+}
+```
 
+ 用一组编程语言运行这个程序很有启发性：
+
+```bash
+$ cargo run Lisp Scheme C C++ Fortran
+   Compiling fragments v0.1.0 (file:///home/jimb/rust/book/fragments)
+     Running `.../target/debug/fragments Lisp Scheme C C++ Fortran`
+Lisp: functional
+Scheme: functional
+C: imperative
+C++: imperative
+Fortran: imperative
+$
+```
+
+ 最后，给出了一个令人满意的函数式语言的定义。
+
+ 尽管vector是很基础的，但是在Rust中定义成一种普通类型，而不是内置在语言中。 我们将在本21章中介绍实现此类类型所需的技术。
+
+###  一个元素一个元素地构造vector
+
+ 一次构建一个向量元素并不像听起来那么糟糕。 每当一个vector超出其缓冲区的容量时，它就会选择一个比旧缓冲区大两倍的新缓冲区。 假设这个vector从一个只能容纳一个元素的缓冲区开始：当它增长到它的最终容量时，它的缓冲区的大小为1、2、4、8，以此类推，直到它的最终大小为2n。 如果你考虑2的幂函数是如何工作的，你会发现之前所有较小缓冲区的总大小加起来是2n-1，非常接近最终缓冲区的大小。 由于实际元素的数量至少是缓冲区大小的一半，所以vector对每个元素执行的拷贝总是小于2次！
+
+ 这意味着使用Vec::with\_capacity而不是Vec::new是一种在速度上获得常数因子改进的方法，而不是一种算法改进。 对于小的vector，避免对堆分配器的一些调用可以显著地提高性能。
+
+### Slices
+
+ 一个slice, 写成 \[T\] 没有指定长度的slice是array或vector的一个区域。 因为slice可以是任意长度的，所以slice不能直接存储在变量中或作为函数参数传递。
 
 
 
