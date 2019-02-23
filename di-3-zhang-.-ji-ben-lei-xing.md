@@ -754,7 +754,124 @@ $
 
 ### Slices
 
- 一个slice, 写成 \[T\] 没有指定长度的slice是array或vector的一个区域。 因为slice可以是任意长度的，所以slice不能直接存储在变量中或作为函数参数传递。
+ 一个slice, 写成 \[T\] 没有指定长度的slice是array或vector的一个区域。 因为slice可以是任意长度的，所以slice不能直接存储在变量中或作为函数参数传递。slice总是通过引用传递。
+
+对slice的引用是一个胖指针：一个两个word的值，包含一个指向slice的第一个元素的指针，以及slice中元素的数量。
+
+假设您运行以下代码：
+
+```rust
+let v: Vec<f64> = vec![0.0, 0.707, 1.0, 0.707];
+let a: [f64; 4] = [0.0, -0.707, -1.0, -0.707];
+
+let sv: &[f64] = &v;
+let sa: &[f64] = &a;
+```
+
+在最后两行中，Rust自动转换&Vec引用并且 &\[f64;4\]引用slice引用直接指向数据。
+
+最后，内存如图3-2所示。
+
+![&#x56FE;3 - 2 &#x5185;&#x5B58;&#x4E2D;&#x7684;vector v&#x548C; array a&#xFF0C;&#x800C;slice sa&#x548C;sv&#x5206;&#x522B;&#x8868;&#x793A;&#x5F15;&#x7528;&#x5B83;&#x4EEC;](.gitbook/assets/qq-tu-pian-20190222163628.png)
+
+普通引用是指向单个值的非拥有指针，而对slice的引用是指向多个值的非拥有指针。这使得当您想要编写一个对任何相同类型数据序列\(无论是存储在array、vector、stack还是heap中\)进行操作的函数时，slice引用是一个很好的选择。例如，这是一个函数，它打印一段数字，每行一个：
+
+```rust
+fn print(n: &[f64]) {
+    for elt in n {
+        println!("{}", elt);
+    }
+}
+
+print(&v); // works on vectors
+print(&a); // works on arrays
+```
+
+因为这个函数以一个slice引用作为参数,所以可以将其应用于一个vector或一个array，如图所示。事实上，许多方法可以认为属于vector或array的方法实际上是在slice上定义的方法：例如这种排序和反转方法，它们可以对元素进行排序或反转，实际上是对slice类型\[T\]的方法。
+
+你可以得到一个array或vector的slice的引用，或一个现有slice的slice，通过索引它的范围：
+
+```rust
+print(&v[0..2]); // print the first two elements of v
+print(&a[2..]); // print elements of a starting with a[2]
+print(&sv[1..3]); // print v[1] and v[2]
+```
+
+与普通数组访问一样，Rust检查索引是否有效。试图借用超出数据末尾的部分会导致一个panic错误。
+
+我们经常使用术语slice来表示引用类型，比如&\[T\]或&str，但这只是一种简写:它们被正确地称为对slice的引用。由于slices几乎总是出现在引用后面，所以我们对更常见的概念使用更短的名称。
+
+### String 类型
+
+熟悉c++的程序员会记得该语言中有两种字符串类型。字符串字面量的指针类型为const char \*。标准库还提供了一个类std::string，用于在运行时动态创建字符串。
+
+Rust也有类似的设计。在本节中，我们将展示编写字符串字面量的所有方法，然后介绍Rust的两种字符串类型。我们在第17章中提供了关于字符串和文本处理的更详细介绍。
+
+#### String字面量
+
+字符串字面量用双引号括起来。它们使用与字符字面量相同的反斜杠转义序列：
+
+```rust
+let speech = "\"Ouch!\" said the well.\n";
+```
+
+在字符串字面量中，与字符字面量不同，单引号不需要反斜杠转义，而双引号则需要。
+
+一个字符串可以跨越多行：
+
+```rust
+println!("In the room the women come and go,
+    Singing of Mount Abora");
+```
+
+字符串字面量中的换行字符包含在字符串中，因此也包含在输出中。第二行开头的空格也是如此。如果字符串的一行以反斜杠结束，那么换行符和下一行的前导空格将被删除：
+
+```rust
+println!("It was a bright, cold day in April, and \
+    there were four of us—\
+    more or less.");
+```
+
+这将打印一行文本。字符串包含“and”和“there”之间的单个空格 ，因为程序中反斜杠前有空格，破折号后没有空格。
+
+在一些情况下，需要将字符串中的每个反斜杠都加倍是很麻烦的。\(典型的例子是正则表达式和Windows路径。\) 对于这些情况，Rust提供raw string。raw strng 用小写字母r标记。raw string 中的所有反斜杠和空格字符都被完整地包含在字符串中。无法识别转义序列。
+
+```rust
+let default_win_install_path = r"C:\Program Files\Gorillas";
+let pattern = Regex::new(r"\d+(\.\d+)*");
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
