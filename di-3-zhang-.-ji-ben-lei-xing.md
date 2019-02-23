@@ -841,25 +841,46 @@ let default_win_install_path = r"C:\Program Files\Gorillas";
 let pattern = Regex::new(r"\d+(\.\d+)*");
 ```
 
+不能仅通过在原始字符串前面加上反斜杠就在其中包含双引号字符——记住，我们说过不能识别转义序列。然而，也有一种处理方法。raw string的开始和结束可以用3个\#标记：
 
+```rust
+println!(r###"
+    This raw string started with 'r###"'.
+    Therefore it does not end until we reach a quote mark ('"')
+    followed immediately by three pound signs ('###'):
+"###);
+```
 
+您可以根据需要添加尽可能少的或尽可能多的\#符号，以明确raw string 的结束位置。
 
+#### Byte Strings
 
+带b前缀的字符串字面量是字节字符串。这样的字符串是u8值\(即字节\)的一部分，而不是Unicode文本：
 
+```rust
+let method = b"GET";
+assert_eq!(method, &[b'G', b'E', b'T']);
+```
 
+这与我们展示的所有其他字符串语法相结合：字节字符串可以跨越多行，使用转义序列，并使用反斜杠连接行。原始字节字符串以br开头。
 
+字节字符串不能包含任意Unicode字符。他们必须是 ASCII和\xHH转义序列。
 
+这里显示的方法类型是&\[u8;3\]：它是对一个三字节数组的引用。它没有我们马上要讨论的任何字符串方法。最像字符串的是我们用来写它的语法。
 
+#### 内存中的string
 
+Rust字符串是Unicode字符的序列，但它们不是作为字符数组存储在内存中。相反，它们使用可变宽度编码UTF-8存储。字符串中的每个ASCII字符存储在一个字节中。其他字符占用多个字节。
 
+图3-3显示了代码创建的string和&str值：
 
+```rust
+let noodles = "noodles".to_string();
+let oodles = &noodles[1..];
+let poodles = "ಠ_ಠ";
+```
 
-
-
-
-
-
-
+![&#x56FE;3 - 3.  &#x5B57;&#x7B26;&#x4E32;&#xFF0C;&amp;str&#xFF0C;&#x548C;str](.gitbook/assets/qq-tu-pian-20190223175516.png)
 
 
 
